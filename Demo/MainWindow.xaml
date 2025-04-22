@@ -1,0 +1,46 @@
+﻿<Window x:Class="Demo.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:Demo"
+        xmlns:fd="clr-namespace:FilterDataGrid;assembly=MaterialFilterGrid"
+        mc:Ignorable="d"
+        Title="MainWindow" Height="600" Width="800">
+    <Grid Margin="20">
+        <!-- Add TextBlock to verify data binding -->
+        <StackPanel>
+
+            <fd:FilterDataGrid 
+                BorderThickness="1"
+                ItemsSource="{Binding YourData}"
+                AutoGenerateColumns="False"
+                CanUserAddRows="False"
+                GridLinesVisibility="All"
+                CanUserReorderColumns="False"
+                DateFormatString="d"
+                EnableColumnVirtualization="True"
+                EnableRowVirtualization="True"
+                IsReadOnly="True"
+                Style="{StaticResource MaterialDesignDataGrid}">
+                <fd:FilterDataGrid.Columns>
+                    <fd:DataGridTextColumn Header="ID" 
+                                         Binding="{Binding Id}" 
+                                         IsColumnFiltered="True"/>
+                    <fd:DataGridTextColumn Header="Name" 
+                                         Binding="{Binding Name}" 
+                                         IsColumnFiltered="True"/>
+                    <fd:DataGridTextColumn Header="Category" 
+                                         Binding="{Binding Category}" 
+                                         IsColumnFiltered="True"/>
+                    <fd:DataGridTextColumn Header="Price" 
+                                         Binding="{Binding Price, StringFormat=C}" 
+                                         IsColumnFiltered="True"/>
+                    <fd:DataGridTextColumn Header="Create Date"
+                                           Binding="{Binding CreatedDate}" 
+                                           IsColumnFiltered="True"/>
+                </fd:FilterDataGrid.Columns>
+            </fd:FilterDataGrid>
+        </StackPanel>
+    </Grid>
+</Window>

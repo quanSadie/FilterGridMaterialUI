@@ -1,0 +1,251 @@
+﻿<ResourceDictionary 
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:md="http://materialdesigninxaml.net/winfx/xaml/themes">
+
+    <!-- Base Button Style -->
+    <Style x:Key="MaterialFilterButtonBase" 
+           TargetType="{x:Type Button}"
+           BasedOn="{StaticResource MaterialDesignRaisedLightButton}">
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="md:ElevationAssist.Elevation" Value="Dp1"/>
+        <Setter Property="md:ButtonAssist.CornerRadius" Value="2"/>
+    </Style>
+
+    <!-- Filter Button Style -->
+    <Style x:Key="MaterialFilterButton" 
+           TargetType="{x:Type Button}"
+           BasedOn="{StaticResource MaterialFilterButtonBase}">
+        <Setter Property="Background" Value="{DynamicResource PrimaryHueLightBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource PrimaryHueMidBrush}"/>
+        <Setter Property="Foreground" Value="{DynamicResource PrimaryHueMidForegroundBrush}"/>
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Background" Value="{DynamicResource PrimaryHueMidBrush}"/>
+                <Setter Property="BorderBrush" Value="{DynamicResource PrimaryHueDarkBrush}"/>
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+    
+    
+
+    <!-- Conditions Combobox Style -->
+    <Style x:Key="MaterialComboBox" 
+           TargetType="{x:Type ComboBox}"
+           BasedOn="{StaticResource MaterialDesignComboBox}">
+        <Setter Property="Padding" Value="5"/>
+    </Style>
+ 
+
+
+
+    <!-- ******************************************************** -->
+    <!-- Search TextBox Style -->
+    <Style x:Key="MaterialSearchBox" 
+        TargetType="{x:Type TextBox}"
+        BasedOn="{StaticResource MaterialDesignOutlinedTextBox}">
+        <Setter Property="md:TextFieldAssist.HasOutlinedTextField" Value="True"/>
+        <Setter Property="md:ValidationAssist.Suppress" Value="True"/>
+        <Setter Property="Padding" Value="5"/>
+        <Setter Property="md:TextFieldAssist.TextFieldCornerRadius" Value="2"/>
+        <Setter Property="md:TextFieldAssist.CharacterCounterStyle" Value="{x:Null}"/>
+        <Style.Triggers>
+            <Trigger Property="Validation.HasError" Value="True">
+                <Setter Property="ToolTip" 
+                     Value="{Binding (Validation.Errors)/ErrorContent, RelativeSource={RelativeSource Mode=Self}}"/>
+                <Setter Property="Background" Value="LightPink"/>
+                <Setter Property="BorderBrush" Value="Red"/>
+                <Setter Property="BorderThickness" Value="1"/>
+                <Setter Property="Padding" Value="6"/>
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+    <!--  PLACEHOLDER SEARCH BOX  -->
+    <Style x:Key="PlaceHolder" TargetType="{x:Type TextBox}" BasedOn="{StaticResource MaterialSearchBox}">
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type TextBox}">
+                    <Grid>
+                        <!-- Main TextBox -->
+                        <TextBox x:Name="TextSource"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            Text="{Binding Text, RelativeSource={RelativeSource TemplatedParent}, UpdateSourceTrigger=PropertyChanged}">
+                            <TextBox.Style>
+                                <Style TargetType="TextBox" BasedOn="{StaticResource MaterialSearchBox}">
+                                    <Setter Property="Foreground" Value="{DynamicResource MaterialDesignBody}"/>
+                                </Style>
+                            </TextBox.Style>
+                        </TextBox>
+
+                        <!-- Placeholder TextBox -->
+                        <TextBox x:Name="TextBoxPlaceHolder"
+                            Text="{TemplateBinding Tag}"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            IsHitTestVisible="False">
+                            <TextBox.Style>
+                                <Style TargetType="TextBox">
+                                    <Setter Property="Foreground" Value="{DynamicResource MaterialDesignBodyLight}"/>
+                                    <Setter Property="Background" Value="Transparent"/>
+                                    <Setter Property="BorderThickness" Value="0"/>
+                                    <Setter Property="Padding" Value="{Binding Padding, ElementName=TextSource}"/>
+                                    <Setter Property="Margin" Value="{Binding Margin, ElementName=TextSource}"/>
+                                    <Setter Property="FontSize" Value="{Binding FontSize, ElementName=TextSource}"/>
+                                    <Setter Property="VerticalAlignment" Value="Center"/>
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <MultiDataTrigger>
+                                            <MultiDataTrigger.Conditions>
+                                                <Condition Binding="{Binding Text, ElementName=TextSource}" Value=""/>
+                                                <Condition Binding="{Binding IsFocused, ElementName=TextSource}" Value="False"/>
+                                            </MultiDataTrigger.Conditions>
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </MultiDataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBox.Style>
+                        </TextBox>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+    <!-- ********************************************************* -->
+
+    
+    
+    
+    <!-- ========================================================= -->
+    <!-- ListBox Style -->
+    <Style x:Key="MaterialFilterListBox" 
+           TargetType="{x:Type ListBox}"
+           BasedOn="{StaticResource MaterialDesignListBox}">
+        <Setter Property="Background" Value="{DynamicResource MaterialDesignPaper}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource MaterialDesignDivider}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+    </Style>
+
+    <!-- TreeView Style -->
+    <Style x:Key="MaterialFilterTreeView" 
+           TargetType="{x:Type TreeView}"
+           BasedOn="{StaticResource MaterialDesignTreeView}">
+        <Setter Property="Background" Value="{DynamicResource MaterialDesignPaper}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource MaterialDesignDivider}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+    </Style>
+
+    <!-- CheckBox Style -->
+    <Style x:Key="MaterialFilterCheckBox" 
+           TargetType="{x:Type CheckBox}"
+           BasedOn="{StaticResource MaterialDesignCheckBox}">
+        <Setter Property="md:CheckBoxAssist.CheckBoxSize" Value="20"/>
+        <Setter Property="Margin" Value="4,2"/>
+        <Setter Property="Padding" Value="4,0"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+        <Setter Property="HorizontalAlignment" Value="Left"/>
+        <Style.Triggers>
+            <Trigger Property="IsChecked" Value="True">
+                <Setter Property="Background" Value="{DynamicResource PrimaryHueMidBrush}"/>
+                <Setter Property="BorderBrush" Value="{DynamicResource PrimaryHueMidBrush}"/>
+            </Trigger>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Background" Value="{DynamicResource PrimaryHueLightBrush}"/>
+                <Setter Property="BorderBrush" Value="{DynamicResource PrimaryHueMidBrush}"/>
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+    <!-- ========================================================= -->
+
+    
+    
+    
+    <!--  DATAGRIDCOLUMNHEADER STYLE  -->
+    <Style BasedOn="{StaticResource {x:Type DataGridColumnHeader}}" TargetType="DataGridColumnHeader">
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="Background" Value="AliceBlue" />
+        <!--
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="DataGridColumnHeader">
+                    <Grid>
+                        <Border x:Name="HeaderBorder"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}">
+                            <Grid Margin="{TemplateBinding Padding}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+
+                                <md:PackIcon x:Name="SortArrow"
+                                       Grid.Column="0"
+                                       Kind="ArrowUp"
+                                       Width="16"
+                                       Height="16"
+                                       Margin="0,0,4,0"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource MaterialDesignBody}"
+                                       Opacity="0.67"
+                                       Visibility="Collapsed"/>
+
+                                <ContentPresenter Grid.Column="1"
+                                            HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                            VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                            SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"
+                                            RecognizesAccessKey="True"/>
+                            </Grid>
+                        </Border>
+
+                        <Thumb x:Name="PART_RightHeaderGripper" 
+                           HorizontalAlignment="Right" 
+                           Width="2"
+                           Cursor="SizeWE"
+                           Style="{StaticResource MaterialDesignGridColumnHeaderGripper}">
+                            <Thumb.Template>
+                                <ControlTemplate TargetType="{x:Type Thumb}">
+                                    <Border Background="Transparent" Width="5">
+                                        <Rectangle HorizontalAlignment="Center"
+                                             Width="1"
+                                             Fill="#FFD4D4D4"
+                                             Opacity="0.7"/>
+                                    </Border>
+                                </ControlTemplate>
+                            </Thumb.Template>
+                        </Thumb>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="SortDirection" Value="Ascending">
+                            <Setter TargetName="SortArrow" Property="Kind" Value="ArrowUp"/>
+                            <Setter TargetName="SortArrow" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                        <Trigger Property="SortDirection" Value="Descending">
+                            <Setter TargetName="SortArrow" Property="Kind" Value="ArrowDown"/>
+                            <Setter TargetName="SortArrow" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="true">
+                            <Setter TargetName="HeaderBorder" Property="Background" Value="{DynamicResource MaterialDesignSelection}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+        -->
+    </Style>
+
+    
+    
+    
+    <!-- Popup Style -->
+    <Style x:Key="MaterialFilterPopup" TargetType="{x:Type Border}">
+        <Setter Property="Background" Value="{DynamicResource MaterialDesignPaper}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource MaterialDesignDivider}"/>
+        <Setter Property="BorderThickness" Value="0.3"/>
+        <Setter Property="Effect">
+            <Setter.Value>
+                <DropShadowEffect BlurRadius="8" ShadowDepth="2" Opacity="0.3"/>
+            </Setter.Value>
+        </Setter>
+    </Style>
+</ResourceDictionary>
