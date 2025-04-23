@@ -1,4 +1,4 @@
-﻿#region (c) 2022 Gilles Macabies All right reserved
+#region (c) 2022 Gilles Macabies All right reserved
 
 // Author     : Gilles Macabies
 // Solution   : FilterDataGrid
@@ -11,10 +11,12 @@
 
 using System;
 using System.Collections;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Linq;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using System.Windows;
@@ -50,7 +52,7 @@ namespace FilterDataGrid
             SetValue(AvailableFilterTypesProperty, new List<FilterCondition>
             {
                 FilterCondition.None,
-                FilterCondition.Contains, 
+                FilterCondition.Contains,
                 FilterCondition.Equals,
                 FilterCondition.NotEquals,
                 FilterCondition.GreaterThan,
@@ -74,6 +76,7 @@ namespace FilterDataGrid
             CommandBindings.Add(new CommandBinding(IsChecked, CheckedAllCommand));
             CommandBindings.Add(new CommandBinding(ClearSearchBox, ClearSearchBoxClick));
 
+            // Conditional filter
             CommandBindings.Add(new CommandBinding(ShowFilterValueInput, ShowFilterValueInputCommand, CanShowFilterValueInput));
             CommandBindings.Add(new CommandBinding(AcceptFilterValue, AcceptFilterValueCommand, CanAcceptFilterValue));
             CommandBindings.Add(new CommandBinding(CancelFilterValue, CancelFilterValueCommand));
@@ -206,6 +209,14 @@ namespace FilterDataGrid
 
         #region Private Fields
 
+        private static readonly ConcurrentDictionary<string, NumberCache> NumericCache = new ConcurrentDictionary<string, NumberCache>();
+
+        private class NumberCache
+        {
+            public double NumericValue { get; set; }
+            public bool IsValid { get; set; }
+        }
+
         private Stopwatch stopWatchFilter = new Stopwatch();
         private bool pending;
         private bool search;
@@ -242,30 +253,44 @@ namespace FilterDataGrid
 
         private readonly Dictionary<string, Predicate<object>> criteria = new Dictionary<string, Predicate<object>>();
         private const StringComparison IgnoreCase = StringComparison.OrdinalIgnoreCase;
+        private static readonly ConcurrentDictionary<string, object> ParsedFilterValueCache = new ConcurrentDictionary<string, object>();
 
         private Popup filterValuePopup;
 
         #endregion Private Fields
 
         #region Public Properties
+
+        /// <summary>
+        ///     Filter dialog title
+        /// </summary>
         public string FilterDialogTitle
         {
             get => (string)GetValue(FilterDialogTitleProperty);
             set => SetValue(FilterDialogTitleProperty, value);
         }
 
+        /// <summary>
+        ///     Selected Condition
+        /// </summary>
         public FilterCondition SelectedFilter
         {
             get => (FilterCondition)GetValue(SelectedFilterProperty);
             set => SetValue(SelectedFilterProperty, value);
         }
 
+        /// <summary>
+        ///     Available filter conditions based on type
+        /// </summary>
         public IEnumerable<FilterCondition> AvailableFilterTypes
         {
             get => (IEnumerable<FilterCondition>)GetValue(AvailableFilterTypesProperty);
             set => SetValue(AvailableFilterTypesProperty, value);
         }
 
+        /// <summary>
+        /// Show filter types
+        /// </summary>
         public bool ShowFilterTypes
         {
             get => (bool)GetValue(ShowFilterTypesProperty);
@@ -641,6 +666,7 @@ namespace FilterDataGrid
                 ResetCursor();
             }
         }
+
         /// <summary>
         ///     Adding Rows count
         /// </summary>
@@ -653,6 +679,11 @@ namespace FilterDataGrid
         #endregion Protected Methods
 
         #region Private Methods
+        /// <summary>
+        /// Get type of column (For conditional filtering)
+        /// </summary>
+        /// <param name="fieldType"></param>
+        /// <returns></returns>
         private IEnumerable<FilterCondition> GetFilterTypesForField(Type fieldType)
         {
             var conditions = new List<FilterCondition> { FilterCondition.None };
@@ -696,135 +727,207 @@ namespace FilterDataGrid
             return conditions;
         }
 
+        /// <summary>
+        /// Can hit ok of conditional filter dialog
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private void CanAcceptFilterValue(object sender, CanExecuteRoutedEventArgs e)
         {
             e.CanExecute = !string.IsNullOrEmpty(FilterValue) && CurrentFilter != null;
-            //e.CanExecute = true;
         }
+
+        /// <summary>
+        /// Can show input field when click on one of the conditions
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private void CanShowFilterValueInput(object sender, CanExecuteRoutedEventArgs e)
         {
             // Can execute if there's a current filter and popup isn't already open
             e.CanExecute = CurrentFilter != null && (filterValuePopup?.IsOpen != true);
-            //e.CanExecute = true;
         }
-        private void ShowFilterValueInputCommand(object sender, ExecutedRoutedEventArgs e)
+
+        /// <summary>
+        /// Display input field
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
+        private async void ShowFilterValueInputCommand(object sender, ExecutedRoutedEventArgs e)
         {
             Debug.WriteLine($"ShowFilterValueInputCommand Parameter Type: {e.Parameter?.GetType()}, Value: {e.Parameter}");
 
             try
             {
-                if (e.Parameter is FilterCondition condition)
+                if (!(e.Parameter is FilterCondition condition))
+                    return;
+
+                if (condition == FilterCondition.None)
                 {
-                    if (condition == FilterCondition.None)
+                    FilterValue = string.Empty;
+                    if (CurrentFilter != null)
                     {
-                        FilterValue = string.Empty;
-                        if (CurrentFilter != null)
-                        {
-                            CurrentFilter.SelectedFilter = FilterCondition.None;
-                            CurrentFilter.FilterValue = string.Empty;
-                        }
-                        HideFilterValueInput();
-                        return;
+                        CurrentFilter.SelectedFilter = FilterCondition.None;
+                        CurrentFilter.FilterValue = string.Empty;
                     }
+                    HideFilterValueInput();
+                    return;
+                }
 
-                    var overlay = GetOverlayFromTemplate();
-                    if (overlay != null)
+                var overlay = GetOverlayFromTemplate();
+                if (overlay == null) return;
+
+                FilterDialogTitle = $"{condition}";
+
+                if (CurrentFilter != null)
+                {
+                    await Task.Run(() =>
                     {
-                        FilterDialogTitle = $"{condition}";
+                        CurrentFilter.SelectedFilter = condition;
+                    });
+                }
 
-                        if (CurrentFilter != null)
-                        {
-                            CurrentFilter.SelectedFilter = condition;
-                        }
+                overlay.Visibility = Visibility.Visible;
 
-                        overlay.Visibility = Visibility.Visible;
-
-                        // Focus the input box
-                        var inputField = GetValueInputFromTemplate();
-                        if (inputField != null)
-                        {
-                            inputField.Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() =>
-                            {
-                                inputField.Focus();
-                                inputField.SelectAll();
-                            }));
-                        }
-                    }
+                // Focus the input box
+                var inputField = GetValueInputFromTemplate();
+                if (inputField != null)
+                {
+                    inputField.Focus();
+                    Keyboard.Focus(inputField);
+                    inputField.SelectAll();
                 }
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"FilterDataGrid.ShowFilterValueInputCommand error: {ex.Message}");
+                throw;
             }
         }
 
-        private void AcceptFilterValueCommand(object sender, ExecutedRoutedEventArgs e)
+        /// <summary>
+        /// Apply Conditional filter
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
+        private async void AcceptFilterValueCommand(object sender, ExecutedRoutedEventArgs e)
         {
             var overlay = GetOverlayFromTemplate();
-            if (overlay != null)
+            if (overlay == null) return;
+
+            try
             {
+                Mouse.OverrideCursor = Cursors.Wait;
+
                 if (CurrentFilter != null)
                 {
-                    // Store current column state
                     var currentField = CurrentFilter.FieldName;
                     var currentColumnObj = currentColumn;
+                    var selectedFilter = CurrentFilter.SelectedFilter;
+                    var filterValue = FilterValue;
 
-                    // Apply the filter
-                    CurrentFilter.FilterValue = FilterValue;
-                    CurrentFilter.IsFiltered = true;
-
-                    if (criteria.ContainsKey(CurrentFilter.FieldName))
+                    await Task.Run(() =>
                     {
-                        criteria.Remove(CurrentFilter.FieldName);
-                    }
+                        CurrentFilter.FilterValue = filterValue;
+                        CurrentFilter.IsFiltered = true;
 
-                    // Add new predicate
-                    criteria[CurrentFilter.FieldName] = obj =>
+                        if (criteria.ContainsKey(currentField))
+                        {
+                            criteria.Remove(currentField);
+                        }
+
+                        PropertyInfo propertyInfo = null;
+                        Type propertyType = null;
+
+                        criteria[currentField] = obj =>
+                        {
+                            try
+                            {
+                                if (obj == null) return false;
+
+                                if (propertyInfo == null || propertyInfo.DeclaringType != obj.GetType())
+                                {
+                                    propertyInfo = obj.GetType().GetProperty(currentField);
+                                    if (propertyInfo != null)
+                                    {
+                                        propertyType = propertyInfo.PropertyType;
+                                        if (propertyType.IsGenericType && propertyType.GetGenericTypeDefinition() == typeof(Nullable<>))
+                                        {
+                                            propertyType = Nullable.GetUnderlyingType(propertyType);
+                                        }
+                                    }
+                                }
+
+                                if (propertyInfo == null) return true;
+
+                                var value = propertyInfo.GetValue(obj);
+                                if (value == null) return selectedFilter == FilterCondition.NotEquals;
+
+                                if (value is string strValue)
+                                    return CompareStrings(strValue, filterValue, selectedFilter);
+
+                                if (value is IConvertible && propertyType.IsPrimitive)
+                                {
+                                    if (double.TryParse(filterValue, out double filterNum))
+                                    {
+                                        return CompareNumbers(Convert.ToDouble(value), filterNum, selectedFilter);
+                                    }
+                                    return false;
+                                }
+
+                                if (value is DateTime dateValue && DateTime.TryParse(filterValue, out DateTime filterDate))
+                                {
+                                    return CompareDates(dateValue, filterDate, selectedFilter);
+                                }
+
+                                return selectedFilter == FilterCondition.Equals ? value.Equals(filterValue) : !value.Equals(filterValue);
+                            }
+                            catch (Exception ex)
+                            {
+                                Debug.WriteLine($"Filter predicate error: {ex.Message}");
+                                return true;
+                            }
+                        };
+                    });
+
+                    await Dispatcher.BeginInvoke(new Action(() =>
                     {
-                        try
+                        FilterState.SetIsFiltered(button, true);
+
+                        if (currentColumnObj != null)
                         {
-                            if (obj == null) return false;
-
-                            var property = obj.GetType().GetProperty(CurrentFilter.FieldName);
-                            if (property == null) return true;
-
-                            var value = property.GetValue(obj);
-                            return EvaluateCondition(value, CurrentFilter.FilterValue, CurrentFilter.SelectedFilter);
+                            if (currentColumnObj is DataGridTextColumn textCol)
+                                textCol.CanUserSort = false;
+                            else if (currentColumnObj is DataGridTemplateColumn templateCol)
+                                templateCol.CanUserSort = false;
                         }
-                        catch (Exception ex)
-                        {
-                            Debug.WriteLine($"Filter predicate error: {ex.Message}");
-                            return true;
-                        }
-                    };
 
-                    // Update UI state
-                    FilterState.SetIsFiltered(button, true);
-
-                    // Clear any existing sort on this column
-                    if (currentColumnObj != null)
-                    {
-                        if (currentColumnObj is DataGridTextColumn textCol)
-                        {
-                            textCol.CanUserSort = false;
-                        }
-                        else if (currentColumnObj is DataGridTemplateColumn templateCol)
-                        {
-                            templateCol.CanUserSort = false;
-                        }
-                    }
-
-                    // Refresh the view
-                    CollectionViewSource?.Refresh();
+                        CollectionViewSource?.Refresh();
+                        overlay.Visibility = Visibility.Collapsed;
+                        ApplyFilter.Execute(this);
+                    }));
                 }
-
-                // Hide the overlay
-                overlay.Visibility = Visibility.Collapsed;
-
-                // Auto-apply the main filter
-                ApplyFilter.Execute(this);
+                else
+                {
+                    overlay.Visibility = Visibility.Collapsed;
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"AcceptFilterValueCommand error: {ex.Message}");
+                throw;
+            }
+            finally
+            {
+                Mouse.OverrideCursor = null;
             }
         }
+
+        /// <summary>
+        /// Hit cancel button
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private void CancelFilterValueCommand(object sender, ExecutedRoutedEventArgs e)
         {
             var overlay = GetOverlayFromTemplate();
@@ -850,16 +953,6 @@ namespace FilterDataGrid
             }
         }
 
-
-        private void FilterValuePopupClosed(object sender, EventArgs e)
-        {
-            // Reset to None if user didn't enter a value
-            if (string.IsNullOrEmpty(FilterValue) && CurrentFilter != null)
-            {
-                SelectedFilter = FilterCondition.None;
-                CurrentFilter.SelectedFilter = FilterCondition.None;
-            }
-        }
         private Grid GetOverlayFromTemplate()
         {
             if (popup?.Child is FrameworkElement popupContent)
@@ -899,8 +992,6 @@ namespace FilterDataGrid
                 grid.CurrentFilter.FilterValue = (string)e.NewValue;
             }
         }
-
-        
 
         /// <summary>
         ///     Build the item tree
@@ -1243,15 +1334,21 @@ namespace FilterDataGrid
         /// <returns></returns>
         private bool Filter(object o)
         {
-            try
+            if (o == null) return false;
+
+            // Fast path for single predicate (most common case)
+            if (criteria.Count == 1)
             {
-                return criteria.Values.All(predicate => predicate(o));
+                return criteria.Values.First()(o);
             }
-            catch (Exception ex)
+
+            // Multiple predicates - use foreach instead of LINQ
+            foreach (var predicate in criteria.Values)
             {
-                Debug.WriteLine($"FilterDataGrid.Filter error: {ex.Message}");
-                return true; // In case of error, don't filter out the item
+                if (!predicate(o))
+                    return false;
             }
+            return true;
         }
 
         /// <summary>
@@ -1568,7 +1665,7 @@ namespace FilterDataGrid
                 // get type or underlying type if nullable
                 if (fieldProperty != null)
                     fieldType = Nullable.GetUnderlyingType(fieldProperty.PropertyType) ?? fieldProperty.PropertyType;
-                    SetValue(AvailableFilterTypesProperty, GetFilterTypesForField(fieldType));
+                SetValue(AvailableFilterTypesProperty, GetFilterTypesForField(fieldType));
 
                 // If no filter, add filter to GlobalFilterList list
                 CurrentFilter = GlobalFilterList.FirstOrDefault(f => f.FieldName == fieldName) ??
@@ -1597,11 +1694,18 @@ namespace FilterDataGrid
                     Dispatcher.Invoke(() =>
                     {
                         if (fieldType == typeof(DateTime))
-                            // possible distinct values because time part is removed
+                        {
                             sourceObjectList = Items.Cast<object>()
-                                .Select(x => (object)((DateTime?)fieldProperty?.GetValue(x, null))?.Date)
+                                .Select(x =>
+                                {
+                                    var dt = fieldProperty?.GetValue(x, null);
+                                    return dt != null ? (object)((DateTime)dt) : null;
+                                })
+                                .Where(x => x != null)
                                 .Distinct()
+                                .OrderBy(x => x)
                                 .ToList();
+                        }
                         else
                             sourceObjectList = Items.Cast<object>()
                                 .Select(x => fieldProperty?.GetValue(x, null))
@@ -1711,83 +1815,124 @@ namespace FilterDataGrid
 
             stopWatchFilter.Start();
             pending = true;
-            popup.IsOpen = false; // raise PopupClosed event
+            popup.IsOpen = false;
 
             Mouse.OverrideCursor = Cursors.Wait;
             try
             {
                 var filterField = CurrentFilter?.FieldName;
-                var filterType = CurrentFilter?.FieldType;
                 var selectedFilter = CurrentFilter?.SelectedFilter ?? FilterCondition.None;
                 var filterValue = CurrentFilter?.FilterValue;
-                var checkedItems = PopupViewItems.Where(f => f.IsChecked).Select(f => f.Content).ToList();
+                var checkedItemsSet = new HashSet<object>(PopupViewItems.Where(f => f.IsChecked).Select(f => f.Content));
 
                 await Task.Run(() =>
                 {
                     if (string.IsNullOrEmpty(filterField)) return;
 
                     if (criteria.ContainsKey(filterField))
-                    {
                         criteria.Remove(filterField);
-                    }
 
-                    // Create the filter predicate
-                    criteria[filterField] = new Predicate<object>(obj =>
+                    PropertyInfo propertyInfo = null;
+                    Type propertyType = null;
+
+                    criteria[filterField] = obj =>
                     {
                         try
                         {
                             if (obj == null) return false;
 
-                            var property = obj.GetType().GetProperty(filterField);
-                            if (property == null) return true;
-
-                            var value = property.GetValue(obj);
-
-                            // Handle checkbox filtering
-                            bool passesCheckboxFilter = checkedItems.Count == 0 || checkedItems.Contains(value);
-
-                            // Handle conditional filtering
-                            bool passesConditionFilter = true;
-                            if (selectedFilter != FilterCondition.None && !string.IsNullOrEmpty(filterValue))
+                            if (propertyInfo == null || propertyInfo.DeclaringType != obj.GetType())
                             {
-                                passesConditionFilter = EvaluateCondition(value, filterValue, selectedFilter);
+                                propertyInfo = obj.GetType().GetProperty(filterField);
+                                if (propertyInfo != null)
+                                {
+                                    propertyType = propertyInfo.PropertyType;
+                                    if (propertyType.IsGenericType && propertyType.GetGenericTypeDefinition() == typeof(Nullable<>))
+                                    {
+                                        propertyType = Nullable.GetUnderlyingType(propertyType);
+                                    }
+                                }
                             }
 
-                            return passesCheckboxFilter && passesConditionFilter;
+                            if (propertyInfo == null) return true;
+
+                            var value = propertyInfo.GetValue(obj);
+                            if (value == null) return false;
+
+                            if (checkedItemsSet.Count > 0 && !checkedItemsSet.Contains(value))
+                                return false;
+
+                            if (selectedFilter == FilterCondition.None || string.IsNullOrEmpty(filterValue))
+                                return true;
+
+                            if (value is string strValue)
+                                return CompareStrings(strValue, filterValue, selectedFilter);
+
+                            if (value is IConvertible && propertyType.IsPrimitive)
+                            {
+                                if (double.TryParse(filterValue, out double filterNum))
+                                {
+                                    return CompareNumbers(Convert.ToDouble(value), filterNum, selectedFilter);
+                                }
+                                return false;
+                            }
+
+                            if (value is DateTime dateValue)
+                            {
+                                if (checkedItemsSet.Count > 0)
+                                {
+                                    bool hasMatch = false;
+                                    foreach (var item in checkedItemsSet)
+                                    {
+                                        if (item is DateTime checkDate && checkDate.Date == dateValue.Date)
+                                        {
+                                            hasMatch = true;
+                                            break;
+                                        }
+                                    }
+                                    if (!hasMatch)
+                                        return false;
+                                }
+
+                                if (selectedFilter == FilterCondition.None || string.IsNullOrEmpty(filterValue))
+                                    return true;
+
+                                if (DateTime.TryParse(filterValue, out DateTime filterDate))
+                                {
+                                    return CompareDates(dateValue, filterDate, selectedFilter);
+                                }
+                                return false;
+                            }
+
+                            return selectedFilter == FilterCondition.Equals ? value.Equals(filterValue) : !value.Equals(filterValue);
                         }
                         catch (Exception ex)
                         {
                             Debug.WriteLine($"Filter predicate error: {ex.Message}");
                             return true;
                         }
-                    });
+                    };
 
-                    // Update filter state
                     if (CurrentFilter != null)
                     {
                         CurrentFilter.IsFiltered = true;
-
                         if (GlobalFilterList.All(f => f.FieldName != filterField))
                             GlobalFilterList.Add(CurrentFilter);
-
                         lastFilter = filterField;
                     }
                 });
 
-                // Apply the filter
                 if (CollectionViewSource?.CanFilter == true)
                 {
                     CollectionViewSource.Refresh();
                 }
 
-                // Update UI
                 if (button != null)
                 {
                     FilterState.SetIsFiltered(button, true);
                 }
 
-                // Reset the combobox selection if needed
-                if (CurrentFilter != null && CurrentFilter.SelectedFilter == FilterCondition.None)
+                if (CurrentFilter?.SelectedFilter == FilterCondition.None)
                 {
                     CurrentFilter.FilterValue = string.Empty;
                     FilterValue = string.Empty;
@@ -1795,7 +1940,7 @@ namespace FilterDataGrid
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"FilterDataGrid.ApplyFilterCommand error : {ex.Message}");
+                Debug.WriteLine($"ApplyFilterCommand error: {ex.Message}");
                 throw;
             }
             finally
@@ -1805,94 +1950,11 @@ namespace FilterDataGrid
                 ItemCollectionView = System.Windows.Data.CollectionViewSource.GetDefaultView(new object());
                 pending = false;
                 CurrentFilter = null;
-
                 stopWatchFilter.Stop();
                 ElapsedTime = stopWatchFilter.Elapsed;
             }
         }
 
-        private bool EvaluateCondition(object value, string filterValue, FilterCondition condition)
-        {
-            // Handle null values
-            if (value == null)
-            {
-                return condition == FilterCondition.NotEquals;
-            }
-
-            try
-            {
-                // If no filter condition or no filter value, include the item
-                if (condition == FilterCondition.None || string.IsNullOrEmpty(filterValue))
-                {
-                    return true;
-                }
-
-                // Handle string comparisons
-                if (value is string stringValue)
-                {
-                    switch (condition)
-                    {
-                        case FilterCondition.Contains:
-                            return stringValue.IndexOf(filterValue, StringComparison.OrdinalIgnoreCase) >= 0;
-                        case FilterCondition.StartsWith:
-                            return stringValue.StartsWith(filterValue, StringComparison.OrdinalIgnoreCase);
-                        case FilterCondition.EndsWith:
-                            return stringValue.EndsWith(filterValue, StringComparison.OrdinalIgnoreCase);
-                        case FilterCondition.Equals:
-                            return string.Equals(stringValue, filterValue, StringComparison.OrdinalIgnoreCase);
-                        case FilterCondition.NotEquals:
-                            return !string.Equals(stringValue, filterValue, StringComparison.OrdinalIgnoreCase);
-                        default:
-                            return false;
-                    }
-                }
-
-                // For other types, try to convert the filter value
-                try
-                {
-                    var convertedValue = Convert.ChangeType(filterValue, value.GetType());
-
-                    if (value is IComparable comparable && convertedValue is IComparable)
-                    {
-                        int compareResult = comparable.CompareTo(convertedValue);
-
-                        switch (condition)
-                        {
-                            case FilterCondition.Equals:
-                                return compareResult == 0;
-                            case FilterCondition.NotEquals:
-                                return compareResult != 0;
-                            case FilterCondition.GreaterThan:
-                                return compareResult > 0;
-                            case FilterCondition.LessThan:
-                                return compareResult < 0;
-                            case FilterCondition.GreaterThanOrEqual:
-                                return compareResult >= 0;
-                            case FilterCondition.LessThanOrEqual:
-                                return compareResult <= 0;
-                            default:
-                                return false;
-                        }
-                    }
-
-                    // Fallback to simple equality check
-                    return condition == FilterCondition.Equals
-                        ? value.Equals(convertedValue)
-                        : !value.Equals(convertedValue);
-                }
-                catch (FormatException)
-                {
-                    // If we can't convert the filter value, exclude the item
-                    return false;
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"EvaluateCondition error: {ex.Message}");
-                return false;
-            }
-        }       
-        
         /// <summary>
         ///     PopUp placement and offset
         /// </summary>
@@ -1968,5 +2030,95 @@ namespace FilterDataGrid
         }
 
         #endregion Private Methods
+
+        #region Conditional filtering helpers
+
+        /// <summary>
+        ///     Compare strings
+        /// </summary>
+        /// <param name="value"></param>
+        /// <param name="filter"></param>
+        /// <param name="condition"></param>
+        /// <returns></returns>
+        private static bool CompareStrings(string value, string filter, FilterCondition condition)
+        {
+            if (value == null)
+                return condition == FilterCondition.NotEquals;
+
+            if (filter == null)
+                return false;
+
+            switch (condition)
+            {
+                case FilterCondition.Contains:
+                    return value.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0;
+                case FilterCondition.StartsWith:
+                    return value.StartsWith(filter, StringComparison.OrdinalIgnoreCase);
+                case FilterCondition.EndsWith:
+                    return value.EndsWith(filter, StringComparison.OrdinalIgnoreCase);
+                case FilterCondition.Equals:
+                    return string.Equals(value, filter, StringComparison.OrdinalIgnoreCase);
+                case FilterCondition.NotEquals:
+                    return !string.Equals(value, filter, StringComparison.OrdinalIgnoreCase);
+                default:
+                    return false;
+            }
+        }
+
+        /// <summary>
+        ///  Compare numbers
+        /// </summary>
+        /// <param name="value"></param>
+        /// <param name="filter"></param>
+        /// <param name="condition"></param>
+        /// <returns></returns>
+        private static bool CompareNumbers(double value, double filter, FilterCondition condition)
+        {
+            const double epsilon = 0.000001;
+            switch (condition)
+            {
+                case FilterCondition.Equals: return Math.Abs(value - filter) < epsilon;
+                case FilterCondition.NotEquals: return Math.Abs(value - filter) >= epsilon;
+                case FilterCondition.GreaterThan: return value > filter;
+                case FilterCondition.LessThan: return value < filter;
+                case FilterCondition.GreaterThanOrEqual: return value >= filter;
+                case FilterCondition.LessThanOrEqual: return value <= filter;
+                default: return false;
+            }
+        }
+
+        /// <summary>
+        /// Compare dates
+        /// </summary>
+        /// <param name="value"></param>
+        /// <param name="filter"></param>
+        /// <param name="condition"></param>
+        /// <returns></returns>
+        private static bool CompareDates(DateTime value, DateTime filter, FilterCondition condition)
+        {
+            // Remove time component for comparison
+            var dateValue = value.Date;
+            var dateFilter = filter.Date;
+
+            switch (condition)
+            {
+                case FilterCondition.Equals:
+                    return dateValue == dateFilter;
+                case FilterCondition.NotEquals:
+                    return dateValue != dateFilter;
+                case FilterCondition.GreaterThan:
+                    return dateValue > dateFilter;
+                case FilterCondition.LessThan:
+                    return dateValue < dateFilter;
+                case FilterCondition.GreaterThanOrEqual:
+                    return dateValue >= dateFilter;
+                case FilterCondition.LessThanOrEqual:
+                    return dateValue <= dateFilter;
+                default:
+                    return false;
+            }
+        }
+        #endregion
     }
 }
+
