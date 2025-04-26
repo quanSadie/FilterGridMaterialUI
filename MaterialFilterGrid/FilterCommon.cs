@@ -1,4 +1,4 @@
-﻿#region (c) 2019 Gilles Macabies All right reserved
+#region (c) 2019 Gilles Macabies All right reserved
 
 // Author     : Gilles Macabies
 // Solution   : DataGridFilter
@@ -11,7 +11,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Linq;
 
 // ReSharper disable UnusedAutoPropertyAccessor.Global
 // ReSharper disable InvalidXmlDocComment
@@ -44,8 +43,6 @@ namespace FilterDataGrid
         public FilterCommon()
         {
             PreviouslyFilteredItems = new HashSet<object>(EqualityComparer<object>.Default);
-            AvailableFilterTypes = new List<FilterCondition> { FilterCondition.None, FilterCondition.Equals, FilterCondition.NotEquals };
-            SelectedFilter = FilterCondition.None;
             FilterValue = string.Empty;
             ValueInputWatermark = "Enter value...";
             ShowFilterTypes = true;
@@ -57,10 +54,6 @@ namespace FilterDataGrid
 
         public string FieldName { get; set; }
         public Type FieldType { get; set; }
-
-        public FilterCondition Condition { get; set; }
-        public List<FilterCondition> AvailableFilterTypes { get; private set; }
-
         public FilterCondition SelectedFilter
         {
             get => selectedFilter;
@@ -129,169 +122,150 @@ namespace FilterDataGrid
         #endregion Public Properties
 
         #region Public Methods
-        private bool CompareValues(object value, object parsedValue, FilterCondition condition)
+
+        public void AddFilterCriteria(Dictionary<string, Predicate<object>> criteria, HashSet<object> checkedItems = null)
         {
-            // Special handling for null values
-            if (value == null)
-                return condition == FilterCondition.NotEquals;
+            if (string.IsNullOrEmpty(FieldName)) return;
 
-            if (parsedValue == null)
-                return false;
-
-            // String comparisons
-            if (value is string stringValue)
+            // Remove existing criteria if any
+            if (criteria.ContainsKey(FieldName))
             {
-                string stringParsedValue = parsedValue.ToString();
-
-                switch (condition)
-                {
-                    case FilterCondition.Contains:
-                        return stringValue.IndexOf(stringParsedValue, StringComparison.OrdinalIgnoreCase) >= 0;
-                    case FilterCondition.StartsWith:
-                        return stringValue.StartsWith(stringParsedValue, StringComparison.OrdinalIgnoreCase);
-                    case FilterCondition.EndsWith:
-                        return stringValue.EndsWith(stringParsedValue, StringComparison.OrdinalIgnoreCase);
-                    case FilterCondition.Equals:
-                        return string.Equals(stringValue, stringParsedValue, StringComparison.OrdinalIgnoreCase);
-                    case FilterCondition.NotEquals:
-                        return !string.Equals(stringValue, stringParsedValue, StringComparison.OrdinalIgnoreCase);
-                    default:
-                        return false;
-                }
+                criteria.Remove(FieldName);
             }
 
-            // Numeric and date comparisons
-            if (value is IComparable comparable)
+            criteria[FieldName] = obj =>
             {
                 try
                 {
-                    // Important: Convert the parsedValue to the same type as value
-                    object convertedValue = Convert.ChangeType(parsedValue, value.GetType());
-                    int compareResult = comparable.CompareTo(convertedValue);
+                    if (obj == null)
+                        return SelectedFilter == FilterCondition.NotEquals;
 
-                    switch (condition)
+                    var propertyInfo = obj.GetType().GetProperty(FieldName);
+                    if (propertyInfo == null) return true;
+
+                    var value = propertyInfo.GetValue(obj);
+
+                    // checkbox filtering
+                    if (checkedItems != null && checkedItems.Count > 0 && !checkedItems.Contains(value))
+                        return false;
+
+                    // conditional filtering
+                    if (SelectedFilter != FilterCondition.None && !string.IsNullOrEmpty(FilterValue))
                     {
-                        case FilterCondition.Equals:
-                            return compareResult == 0;
-                        case FilterCondition.NotEquals:
-                            return compareResult != 0;
-                        case FilterCondition.GreaterThan:
-                            return compareResult > 0;
-                        case FilterCondition.LessThan:
-                            return compareResult < 0;
-                        case FilterCondition.GreaterThanOrEqual:
-                            return compareResult >= 0;
-                        case FilterCondition.LessThanOrEqual:
-                            return compareResult <= 0;
-                        default:
-                            return false;
+                        return CompareValues(value, FilterValue, SelectedFilter);
                     }
+
+                    return true;
                 }
                 catch
                 {
                     return false;
                 }
-            }
+            };
 
-            // Default comparison for non-comparable types
+            IsFiltered = true;
+        }
+
+        #endregion Public Methods
+
+        #region Helper Methods
+        private bool CompareValues(object value, string filterValue, FilterCondition condition)
+        {
+            if (value == null)
+                return condition == FilterCondition.NotEquals;
+
+            if (string.IsNullOrEmpty(filterValue))
+                return true;
+
+            try
+            {
+                if (value is string strValue)
+                    return CompareStrings(strValue, filterValue, condition);
+
+                if (value is IConvertible)
+                {
+                    if (value is DateTime dateValue)
+                    {
+                        if (DateTime.TryParse(filterValue, out DateTime filterDate))
+                        {
+                            return CompareDates(dateValue, filterDate, condition);
+                        }
+                        return false;
+                    }
+
+                    if (double.TryParse(filterValue, out double filterNum))
+                    {
+                        return CompareNumbers(Convert.ToDouble(value), filterNum, condition);
+                    }
+                }
+
+                return condition == FilterCondition.Equals
+                    ? value.ToString().Equals(filterValue, StringComparison.OrdinalIgnoreCase)
+                    : !value.ToString().Equals(filterValue, StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool CompareStrings(string value, string filter, FilterCondition condition)
+        {
             switch (condition)
             {
+                case FilterCondition.Contains:
+                    return value.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0;
+                case FilterCondition.StartsWith:
+                    return value.StartsWith(filter, StringComparison.OrdinalIgnoreCase);
+                case FilterCondition.EndsWith:
+                    return value.EndsWith(filter, StringComparison.OrdinalIgnoreCase);
                 case FilterCondition.Equals:
-                    return value.Equals(parsedValue);
+                    return string.Equals(value, filter, StringComparison.OrdinalIgnoreCase);
                 case FilterCondition.NotEquals:
-                    return !value.Equals(parsedValue);
+                    return !string.Equals(value, filter, StringComparison.OrdinalIgnoreCase);
                 default:
                     return false;
             }
         }
-        public void AddFilter(Dictionary<string, Predicate<object>> criteria)
+
+        private static bool CompareNumbers(double value, double filter, FilterCondition condition)
         {
-            if (IsFiltered)
-                return;
-
-            bool Predicate(object o)
+            const double epsilon = 0.000001;
+            switch (condition)
             {
-                if (o == null)
-                    return false;
-
-                var property = o.GetType().GetProperty(FieldName);
-                if (property == null)
-                    return true;
-
-                try
-                {
-                    // Get the value, handling DateTime specially
-                    object value;
-                    if (FieldType == typeof(DateTime))
-                    {
-                        var dateValue = property.GetValue(o, null) as DateTime?;
-                        value = dateValue?.Date;
-                    }
-                    else
-                    {
-                        value = property.GetValue(o, null);
-                    }
-
-                    // First check the checkbox filter
-                    bool passesCheckboxFilter = !PreviouslyFilteredItems.Contains(value);
-
-                    // Then check the conditional filter if one is active
-                    bool passesConditionalFilter = true;
-                    if (SelectedFilter != FilterCondition.None && !string.IsNullOrEmpty(FilterValue))
-                    {
-                        var parsedValue = ParseFilterValue();
-                        passesConditionalFilter = CompareValues(value, parsedValue, SelectedFilter);
-                    }
-
-                    // Both conditions must be met
-                    return passesCheckboxFilter && passesConditionalFilter;
-                }
-                catch
-                {
-                    return false;
-                }
+                case FilterCondition.Equals: return Math.Abs(value - filter) < epsilon;
+                case FilterCondition.NotEquals: return Math.Abs(value - filter) >= epsilon;
+                case FilterCondition.GreaterThan: return value > filter;
+                case FilterCondition.LessThan: return value < filter;
+                case FilterCondition.GreaterThanOrEqual: return value >= filter;
+                case FilterCondition.LessThanOrEqual: return value <= filter;
+                default: return false;
             }
-
-            criteria.Add(FieldName, Predicate);
-            IsFiltered = true;
         }
 
-        private object ParseFilterValue()
+        private static bool CompareDates(DateTime value, DateTime filter, FilterCondition condition)
         {
-            if (string.IsNullOrEmpty(FilterValue))
-                return null;
+            var dateValue = value.Date;
+            var dateFilter = filter.Date;
 
-            try
+            switch (condition)
             {
-                // Handle different types
-                if (FieldType == typeof(string))
-                    return FilterValue;
-
-                if (FieldType == typeof(int) || FieldType == typeof(int?))
-                    return int.Parse(FilterValue);
-
-                if (FieldType == typeof(double) || FieldType == typeof(double?))
-                    return double.Parse(FilterValue);
-
-                if (FieldType == typeof(decimal) || FieldType == typeof(decimal?))
-                    return decimal.Parse(FilterValue);
-
-                if (FieldType == typeof(DateTime) || FieldType == typeof(DateTime?))
-                {
-                    var date = DateTime.Parse(FilterValue);
-                    return FieldType == typeof(DateTime?) ? (DateTime?)date : date;
-                }
-
-                if (FieldType == typeof(bool) || FieldType == typeof(bool?))
-                    return bool.Parse(FilterValue);
-
-                return FilterValue;
-            }
-            catch
-            {
-                return FilterValue;
+                case FilterCondition.Equals:
+                    return dateValue == dateFilter;
+                case FilterCondition.NotEquals:
+                    return dateValue != dateFilter;
+                case FilterCondition.GreaterThan:
+                    return dateValue > dateFilter;
+                case FilterCondition.LessThan:
+                    return dateValue < dateFilter;
+                case FilterCondition.GreaterThanOrEqual:
+                    return dateValue >= dateFilter;
+                case FilterCondition.LessThanOrEqual:
+                    return dateValue <= dateFilter;
+                default:
+                    return false;
             }
         }
-        #endregion Public Methods
+        #endregion
     }
 }
