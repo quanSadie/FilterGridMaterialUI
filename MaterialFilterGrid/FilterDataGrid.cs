@@ -821,9 +821,7 @@ namespace FilterDataGrid
 
                 if (CurrentFilter != null)
                 {
-                    var currentField = CurrentFilter.FieldName;
                     var currentColumnObj = currentColumn;
-                    var selectedFilter = CurrentFilter.SelectedFilter;
                     var filterValue = FilterValue;
 
                     await Task.Run(() =>
@@ -831,69 +829,15 @@ namespace FilterDataGrid
                         CurrentFilter.FilterValue = filterValue;
                         CurrentFilter.IsFiltered = true;
 
-                        if (criteria.ContainsKey(currentField))
-                        {
-                            criteria.Remove(currentField);
-                        }
-
-                        PropertyInfo propertyInfo = null;
-                        Type propertyType = null;
-
-                        criteria[currentField] = obj =>
-                        {
-                            try
-                            {
-                                if (obj == null) return false;
-
-                                if (propertyInfo == null || propertyInfo.DeclaringType != obj.GetType())
-                                {
-                                    propertyInfo = obj.GetType().GetProperty(currentField);
-                                    if (propertyInfo != null)
-                                    {
-                                        propertyType = propertyInfo.PropertyType;
-                                        if (propertyType.IsGenericType && propertyType.GetGenericTypeDefinition() == typeof(Nullable<>))
-                                        {
-                                            propertyType = Nullable.GetUnderlyingType(propertyType);
-                                        }
-                                    }
-                                }
-
-                                if (propertyInfo == null) return true;
-
-                                var value = propertyInfo.GetValue(obj);
-                                if (value == null) return selectedFilter == FilterCondition.NotEquals;
-
-                                if (value is string strValue)
-                                    return CompareStrings(strValue, filterValue, selectedFilter);
-
-                                if (value is IConvertible && propertyType.IsPrimitive)
-                                {
-                                    if (double.TryParse(filterValue, out double filterNum))
-                                    {
-                                        return CompareNumbers(Convert.ToDouble(value), filterNum, selectedFilter);
-                                    }
-                                    return false;
-                                }
-
-                                if (value is DateTime dateValue && DateTime.TryParse(filterValue, out DateTime filterDate))
-                                {
-                                    return CompareDates(dateValue, filterDate, selectedFilter);
-                                }
-
-                                return selectedFilter == FilterCondition.Equals ? value.Equals(filterValue) : !value.Equals(filterValue);
-                            }
-                            catch (Exception ex)
-                            {
-                                Debug.WriteLine($"Filter predicate error: {ex.Message}");
-                                return true;
-                            }
-                        };
+                        // Use the FilterCommon's method to add the criteria
+                        CurrentFilter.AddFilterCriteria(criteria);
                     });
 
                     await Dispatcher.BeginInvoke(new Action(() =>
                     {
                         FilterState.SetIsFiltered(button, true);
 
+                        // Disable sorting for filtered column
                         if (currentColumnObj != null)
                         {
                             if (currentColumnObj is DataGridTextColumn textCol)
@@ -904,6 +848,8 @@ namespace FilterDataGrid
 
                         CollectionViewSource?.Refresh();
                         overlay.Visibility = Visibility.Collapsed;
+
+                        // If you want to keep the ApplyFilter execution
                         ApplyFilter.Execute(this);
                     }));
                 }
@@ -922,7 +868,6 @@ namespace FilterDataGrid
                 Mouse.OverrideCursor = null;
             }
         }
-
         /// <summary>
         /// Hit cancel button
         /// </summary>
@@ -1820,105 +1765,19 @@ namespace FilterDataGrid
             Mouse.OverrideCursor = Cursors.Wait;
             try
             {
-                var filterField = CurrentFilter?.FieldName;
-                var selectedFilter = CurrentFilter?.SelectedFilter ?? FilterCondition.None;
-                var filterValue = CurrentFilter?.FilterValue;
                 var checkedItemsSet = new HashSet<object>(PopupViewItems.Where(f => f.IsChecked).Select(f => f.Content));
 
                 await Task.Run(() =>
                 {
-                    if (string.IsNullOrEmpty(filterField)) return;
-
-                    if (criteria.ContainsKey(filterField))
-                        criteria.Remove(filterField);
-
-                    PropertyInfo propertyInfo = null;
-                    Type propertyType = null;
-
-                    criteria[filterField] = obj =>
-                    {
-                        try
-                        {
-                            if (obj == null) return false;
-
-                            if (propertyInfo == null || propertyInfo.DeclaringType != obj.GetType())
-                            {
-                                propertyInfo = obj.GetType().GetProperty(filterField);
-                                if (propertyInfo != null)
-                                {
-                                    propertyType = propertyInfo.PropertyType;
-                                    if (propertyType.IsGenericType && propertyType.GetGenericTypeDefinition() == typeof(Nullable<>))
-                                    {
-                                        propertyType = Nullable.GetUnderlyingType(propertyType);
-                                    }
-                                }
-                            }
-
-                            if (propertyInfo == null) return true;
-
-                            var value = propertyInfo.GetValue(obj);
-                            if (value == null) return false;
-
-                            if (checkedItemsSet.Count > 0 && !checkedItemsSet.Contains(value))
-                                return false;
-
-                            if (selectedFilter == FilterCondition.None || string.IsNullOrEmpty(filterValue))
-                                return true;
-
-                            if (value is string strValue)
-                                return CompareStrings(strValue, filterValue, selectedFilter);
-
-                            if (value is IConvertible && propertyType.IsPrimitive)
-                            {
-                                if (double.TryParse(filterValue, out double filterNum))
-                                {
-                                    return CompareNumbers(Convert.ToDouble(value), filterNum, selectedFilter);
-                                }
-                                return false;
-                            }
-
-                            if (value is DateTime dateValue)
-                            {
-                                if (checkedItemsSet.Count > 0)
-                                {
-                                    bool hasMatch = false;
-                                    foreach (var item in checkedItemsSet)
-                                    {
-                                        if (item is DateTime checkDate && checkDate.Date == dateValue.Date)
-                                        {
-                                            hasMatch = true;
-                                            break;
-                                        }
-                                    }
-                                    if (!hasMatch)
-                                        return false;
-                                }
-
-                                if (selectedFilter == FilterCondition.None || string.IsNullOrEmpty(filterValue))
-                                    return true;
-
-                                if (DateTime.TryParse(filterValue, out DateTime filterDate))
-                                {
-                                    return CompareDates(dateValue, filterDate, selectedFilter);
-                                }
-                                return false;
-                            }
-
-                            return selectedFilter == FilterCondition.Equals ? value.Equals(filterValue) : !value.Equals(filterValue);
-                        }
-                        catch (Exception ex)
-                        {
-                            Debug.WriteLine($"Filter predicate error: {ex.Message}");
-                            return true;
-                        }
-                    };
-
                     if (CurrentFilter != null)
                     {
-                        CurrentFilter.IsFiltered = true;
-                        if (GlobalFilterList.All(f => f.FieldName != filterField))
+                        CurrentFilter.AddFilterCriteria(criteria, checkedItemsSet);
+
+                        if (GlobalFilterList.All(f => f.FieldName != CurrentFilter.FieldName))
+                        {
                             GlobalFilterList.Add(CurrentFilter);
-                        lastFilter = filterField;
+                        }
+                        lastFilter = CurrentFilter.FieldName;
                     }
                 });
 
